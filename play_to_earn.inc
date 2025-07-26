@@ -3,25 +3,33 @@
 #endif
 #define play_to_earn
 
+#include <sdktools_stringtables>
 #include <SteamWorks>
 
-public char        DISCORD_INVITE[32]   = "discord.gg/vGHxVsXc4Q";
-static char DATABASE_HTTP_IP[32] = "http://localhost:8000";
-static char PAYMENT_HTTP_IP[32]  = "http://localhost:8001";
+public const char        DISCORD_INVITE[]      = "discord.gg/vGHxVsXc4Q";
+static const char DATABASE_HTTP_IP[]    = "http://localhost:8000";
+static const char PAYMENT_HTTP_IP[]     = "http://localhost:8001";
+static const char SKIN_HTTP_IP[]        = "http://localhost:8002";
+static const char SKINS_ID_PATH[]       = "addons/sourcemod/configs/skins_reader/skins_id.init";
+static const char SKINS_NAME_PATH[]     = "addons/sourcemod/configs/skins_reader/skins_name.init";
+static const char SKINS_DOWNLOAD_LIST[] = "addons/sourcemod/configs/skins_reader/downloads_list.ini";
+
+// Configurations
+public bool       enableSkinMenu = false;
 
 //
 // #REGION Increment Wallet
 //
 
-char        incrementWalletRequestBodies[MAXPLAYERS][256];
-/// Increment value to the player wallet
-stock void  IncrementWallet(
-     int client,
-     char[] valueToIncrement,
-     char[] valueToShow = "0 PTE",
-     char[] reason      = ", for Playing")
+char       incrementWalletRequestBodies[MAXPLAYERS][256];
+// Increment value to the player wallet
+stock void IncrementWallet(
+    int client,
+    char[] valueToIncrement,
+    char[] valueToShow = "0 PTE",
+    char[] reason      = ", for Playing")
 {
-    if (!IsClientConnected(client) || IsFakeClient(client))
+    if (!IsValidClient(client))
     {
         return;
     }
@@ -130,10 +138,10 @@ stock void OnIncrementRequest(Handle hRequest, bool bFailure, bool bRequestSucce
 // #REGION Register Player
 //
 
-/// Try to register the player
+// Try to register the player, should be called before any function in this include
 stock void RegisterPlayer(const int client)
 {
-    if (!IsClientConnected(client) || IsFakeClient(client))
+    if (!IsValidClient(client))
     {
         return;
     }
@@ -185,10 +193,10 @@ stock void OnRegisterPlayerRequest(Handle hRequest, bool bFailure, bool bRequest
 // #REGION Register Player
 //
 
-/// Updates a player wallet based on player client
+// Updates a player wallet based on player client
 stock void UpdateWallet(const int client, const char walletaddress[256])
 {
-    if (!IsClientConnected(client) || IsFakeClient(client))
+    if (!IsValidClient(client))
     {
         return;
     }
@@ -247,12 +255,191 @@ stock void OnCommandRegisterWalletRequest(Handle hRequest, bool bFailure, bool b
 //
 
 //
+// #REGION Equip Skin
+//
+
+// Equip the skin to the player
+stock void Simple_EquipSkin(const int client, const char[] skinid)
+{
+    if (!IsValidClient(client))
+    {
+        return;
+    }
+
+    int steamid = GetSteamAccountID(client);
+
+    if (steamid == 0)
+    {
+        PrintToServer("[PTE-INC] Invalid client when equip skin");
+        return;
+    }
+
+    char url[256];
+    Format(url, sizeof(url), "%s/equipskin", SKIN_HTTP_IP);
+    Handle requestHandle = SteamWorks_CreateHTTPRequest(k_EHTTPMethodPOST, url);
+
+    if (requestHandle == INVALID_HANDLE)
+    {
+        PrintToServer("[PTE-INC] Error while creating the http request.");
+        return;
+    }
+
+    SteamWorks_SetHTTPRequestContextValue(requestHandle, client);
+    SteamWorks_SetHTTPCallbacks(requestHandle, Simple_OnEquipSkinRequest);
+
+    char bodyStr[256];
+    Format(bodyStr, sizeof(bodyStr),
+           "{\"uniqueid\": %d, \"skinid\": %s}",
+           steamid, skinid);
+
+    char from[64];
+    GetGameFolderName(from, sizeof(from));
+
+    SteamWorks_SetHTTPRequestHeaderValue(requestHandle, "Content-Type", "application/json");
+    SteamWorks_SetHTTPRequestHeaderValue(requestHandle, "from", from);
+    SteamWorks_SetHTTPRequestRawPostBody(requestHandle, "application/json", bodyStr, strlen(bodyStr));
+
+    SteamWorks_SendHTTPRequest(requestHandle);
+}
+
+stock void Simple_OnEquipSkinRequest(Handle hRequest, bool bFailure, bool bRequestSuccessful, EHTTPStatusCode eStatusCode, any data1, any data2)
+{
+    int client = data1;
+
+    if (eStatusCode == k_EHTTPStatusCode200OK)
+    {
+        PrintToChat(client, "[PTE] Skin equipped successfully");
+    }
+    else if (eStatusCode == k_EHTTPStatusCode501NotImplemented) {
+        PrintToChat(client, "[PTE] You don't have any wallet registered, you can register by using: !wallet 0x123..., for more information you can check your discord: %s", DISCORD_INVITE);
+    }
+    else {
+        PrintToChat(client, "[PTE] Server error, contact server owner on: %s, code: %d", DISCORD_INVITE, eStatusCode);
+    }
+}
+
+//
+// #ENDREGION Equip Skin
+//
+
+//
+// #REGION SIMPLE Equipped Skin
+//
+
+Function   equippedSkinRequestCallbacks[MAXPLAYERS];
+stock void Simple_EquippedSkin(int client, Function callback)
+{
+    if (!IsValidClient(client))
+    {
+        return;
+    }
+
+    int steamid = GetSteamAccountID(client);
+
+    if (steamid == 0)
+    {
+        PrintToServer("[PTE-INC] Invalid client when equip skin");
+        return;
+    }
+
+    char url[256];
+    Format(url, sizeof(url), "%s/equippedskin?uniqueid=%d", SKIN_HTTP_IP, steamid);
+    Handle requestHandle = SteamWorks_CreateHTTPRequest(k_EHTTPMethodGET, url);
+
+    if (requestHandle == INVALID_HANDLE)
+    {
+        PrintToServer("[PTE-INC] Error while creating the http request.");
+        return;
+    }
+
+    SteamWorks_SetHTTPRequestContextValue(requestHandle, client);
+    SteamWorks_SetHTTPCallbacks(requestHandle, Simple_OnEquippedSkinRequest);
+
+    char from[64];
+    GetGameFolderName(from, sizeof(from));
+
+    SteamWorks_SetHTTPRequestHeaderValue(requestHandle, "from", from);
+
+    Simple_EquippedSkinStartRequestWaitTimer(requestHandle, client, callback);
+}
+
+stock void Simple_EquippedSkinStartRequestWaitTimer(Handle requestHandle, int client, Function callback)
+{
+    DataPack pack = new DataPack();
+    pack.WriteCell(client);
+    pack.WriteCell(requestHandle);
+    pack.WriteFunction(callback);
+
+    CreateTimer(0.5, Simple_EquippedSkinWaitForEmptyQueue, pack, TIMER_REPEAT);
+}
+
+stock Action Simple_EquippedSkinWaitForEmptyQueue(Handle timer, DataPack pack)
+{
+    pack.Reset();
+
+    int      client        = pack.ReadCell();
+    Handle   requestHandle = pack.ReadCell();
+    Function callback      = pack.ReadFunction();
+
+    if (equippedSkinRequestCallbacks[client] == INVALID_FUNCTION)
+    {
+        delete pack;
+        equippedSkinRequestCallbacks[client] = callback;
+        SteamWorks_SendHTTPRequest(requestHandle);
+        return Plugin_Stop;
+    }
+    return Plugin_Continue;
+}
+
+stock void Simple_OnEquippedSkinRequest(Handle hRequest, bool bFailure, bool bRequestSuccessful, EHTTPStatusCode eStatusCode, any data1, any data2)
+{
+    int      client   = data1;
+
+    Function callback = equippedSkinRequestCallbacks[client];
+    if (callback == INVALID_FUNCTION)
+    {
+        PrintToServer("[PTE-INC] [EquippedSkin] ERROR: %d (client) have any invalid callback object", client);
+        return;
+    }
+
+    if (eStatusCode == k_EHTTPStatusCode200OK)
+    {
+        int bodySize = 0;
+        if (!SteamWorks_GetHTTPResponseBodySize(hRequest, bodySize) || bodySize <= 0)
+        {
+            PrintToServer("[PTE-INC] Body response is empty");
+            equippedSkinRequestCallbacks[client] = INVALID_FUNCTION;
+            return;
+        }
+
+        char[] skinid = new char[bodySize + 1];
+        if (!SteamWorks_GetHTTPResponseBodyData(hRequest, skinid, bodySize))
+        {
+            PrintToServer("[PTE-INC] Failed to receive equippedskin body response");
+            equippedSkinRequestCallbacks[client] = INVALID_FUNCTION;
+            return;
+        }
+
+        Call_StartFunction(INVALID_HANDLE, callback);
+        Call_PushCell(client);
+        Call_PushString(skinid);
+        Call_Finish();
+    }
+
+    equippedSkinRequestCallbacks[client] = INVALID_FUNCTION;
+}
+
+//
+// #ENDREGION SIMPLE Equipped Skin
+//
+
+//
 // #REGION Show Menu
 //
 
 stock void ShowMenu(int client)
 {
-    if (!IsClientConnected(client) || IsFakeClient(client))
+    if (!IsValidClient(client))
     {
         return;
     }
@@ -278,21 +465,14 @@ stock void ShowMenu(int client)
     SteamWorks_SetHTTPRequestContextValue(requestHandle, client);
     SteamWorks_SetHTTPCallbacks(requestHandle, OnMenuBalanceReceived);
 
-    char bodyStr[256];
-    Format(bodyStr, sizeof(bodyStr),
-           "{\"uniqueid\": %d}",
-           steamid);
-
     char from[64];
     GetGameFolderName(from, sizeof(from));
 
-    SteamWorks_SetHTTPRequestHeaderValue(requestHandle, "Content-Type", "application/json");
     SteamWorks_SetHTTPRequestHeaderValue(requestHandle, "from", from);
-
     SteamWorks_SendHTTPRequest(requestHandle);
 }
 
-public OnMenuBalanceReceived(Handle hRequest, bool bFailure, bool bRequestSuccessful, EHTTPStatusCode eStatusCode, any data1, any data2)
+stock OnMenuBalanceReceived(Handle hRequest, bool bFailure, bool bRequestSuccessful, EHTTPStatusCode eStatusCode, any data1, any data2)
 {
     int client = data1;
 
@@ -321,10 +501,14 @@ public OnMenuBalanceReceived(Handle hRequest, bool bFailure, bool bRequestSucces
     menu.AddItem("1", "Request Payment");
     menu.AddItem("2", "Register Wallet");
     menu.AddItem("3", "View Steam ID");
+    if (enableSkinMenu)
+    {
+        menu.AddItem("4", "View Available Skins");
+    }
     menu.Display(client, 8);
 }
 
-public int MenuHandler(Menu menu, MenuAction action, int client, int param)
+stock int MenuHandler(Menu menu, MenuAction action, int client, int param)
 {
     if (action == MenuAction_Select)
     {
@@ -369,7 +553,7 @@ public int MenuHandler(Menu menu, MenuAction action, int client, int param)
         }
         else if (StrEqual(info, "2"))
         {
-            PrintToChat(client, "[PTE] You can register your wallet address in the chat, like: !wallet 0x123..., for more information you can check your discord: discord.gg/vGHxVsXc4Q");
+            PrintToChat(client, "[PTE] You can register your wallet address in the chat, like: !wallet 0x123..., for more information you can check your discord: %s", DISCORD_INVITE);
             ShowMenu(client);
         }
         else if (StrEqual(info, "3"))
@@ -377,12 +561,17 @@ public int MenuHandler(Menu menu, MenuAction action, int client, int param)
             PrintToChat(client, "[PTE] Your steam id is: %d", GetSteamAccountID(client));
             ShowMenu(client);
         }
+        else if (StrEqual(info, "4") && enableSkinMenu)
+        {
+            PrintToChat(client, "[PTE] Wait a second while the server is loading your available skins...");
+            Simple_ShowSkinsMenu(client);
+        }
     }
 
     return 0;
 }
 
-public OnPaymentRequestReceived(Handle hRequest, bool bFailure, bool bRequestSuccessful, EHTTPStatusCode eStatusCode, any data1, any data2)
+stock OnPaymentRequestReceived(Handle hRequest, bool bFailure, bool bRequestSuccessful, EHTTPStatusCode eStatusCode, any data1, any data2)
 {
     int client = data1;
 
@@ -415,10 +604,128 @@ public OnPaymentRequestReceived(Handle hRequest, bool bFailure, bool bRequestSuc
 //
 
 //
+// #REGION Show SIMPLE Skins Menu
+//
+
+// Show the skin menu to the player
+stock void Simple_ShowSkinsMenu(int client)
+{
+    if (!IsValidClient(client))
+    {
+        return;
+    }
+
+    int steamid = GetSteamAccountID(client);
+
+    if (steamid == 0)
+    {
+        PrintToServer("[PTE-INC] Invalid client when registering player");
+        return;
+    }
+
+    char url[256];
+    Format(url, sizeof(url), "%s/availableskins?uniqueid=%d", SKIN_HTTP_IP, steamid);
+    Handle requestHandle = SteamWorks_CreateHTTPRequest(k_EHTTPMethodGET, url);
+
+    if (requestHandle == INVALID_HANDLE)
+    {
+        PrintToServer("[PTE] Error while creating the http request.");
+        return;
+    }
+
+    SteamWorks_SetHTTPRequestContextValue(requestHandle, client);
+    SteamWorks_SetHTTPCallbacks(requestHandle, Simple_OnSkinMenuSkinsReceived);
+
+    char from[64];
+    GetGameFolderName(from, sizeof(from));
+
+    SteamWorks_SetHTTPRequestHeaderValue(requestHandle, "from", from);
+    SteamWorks_SendHTTPRequest(requestHandle);
+}
+
+stock Simple_OnSkinMenuSkinsReceived(Handle hRequest, bool bFailure, bool bRequestSuccessful, EHTTPStatusCode eStatusCode, any data1, any data2)
+{
+    int client = data1;
+
+    if (eStatusCode == k_EHTTPStatusCode501NotImplemented)
+    {
+        PrintToChat(client, "[PTE] Cannot view your skins because you don't have any wallet, you can register your wallet address in the chat, like: !wallet 0x123..., for more information you can check your discord: %s", DISCORD_INVITE);
+        return;
+    }
+
+    if (eStatusCode != k_EHTTPStatusCode200OK)
+    {
+        PrintToServer("[PTE] Cannot receive skins from user, please check the http server");
+        return;
+    }
+
+    int bodySize = 0;
+    if (!SteamWorks_GetHTTPResponseBodySize(hRequest, bodySize) || bodySize <= 0)
+    {
+        PrintToServer("[PTE] Body response is empty");
+        return;
+    }
+
+    char[] skins = new char[bodySize + 1];
+    if (!SteamWorks_GetHTTPResponseBodyData(hRequest, skins, bodySize))
+    {
+        PrintToServer("[PTE] Failed to receive skins body response");
+        return;
+    }
+
+    if (skins[0] == '[')
+    {
+        strcopy(skins, bodySize + 1, skins[1]);
+    }
+
+    int len = strlen(skins);
+    if (len > 0 && skins[len - 1] == ']')
+    {
+        skins[len - 1] = '\0';
+    }
+
+    char parts[16][16];
+    int  count = ExplodeString(skins, ",", parts, sizeof(parts), sizeof(parts[]));
+
+    Menu menu  = new Menu(Simple_SkinMenuHandler);
+    menu.SetTitle("Select your desired skin");
+    for (int i = 0; i < count; i++)
+    {
+        char skinName[PLATFORM_MAX_PATH];
+        if (GetSkinNameBySkinID(parts[i], skinName, sizeof(skinName)))
+        {
+            menu.AddItem(parts[i], skinName);
+        }
+        else {
+            PrintToServer("[PTE-INC] ERROR: No name can be found for skinid: %s, verify in %s", parts[i], SKINS_NAME_PATH);
+            menu.AddItem(parts[i], "No Name");
+        }
+    }
+    menu.Display(client, 8);
+}
+
+stock int Simple_SkinMenuHandler(Menu menu, MenuAction action, int client, int param)
+{
+    if (action == MenuAction_Select)
+    {
+        char info[32];
+        menu.GetItem(param, info, sizeof(info));
+
+        Simple_EquipSkin(client, info);
+    }
+
+    return 0;
+}
+
+//
+// #ENDREGION Show Skins Menu
+//
+
+//
 // #REGION Utils
 //
 
-/// Returns any array containing all "client" from online players
+// Returns any array containing all "client" from online players
 stock void GetOnlinePlayers(int[] onlinePlayers, int playerSize)
 {
     int arrayIndex = 0;
@@ -441,7 +748,7 @@ stock void GetOnlinePlayers(int[] onlinePlayers, int playerSize)
     }
 }
 
-/// Returns a int number containing the count of online players
+// Returns a int number containing the count of online players
 stock int GetOnlinePlayersCount()
 {
     int count = 0;
@@ -522,6 +829,124 @@ stock bool IsValidClient(client)
         return false;
     }
     return IsClientInGame(client);
+}
+
+// Returns the model path by the skinid
+stock bool GetSkinModelPathBySkinID(const char[] providedSkinID, char[] skinPathBuffer, int skinPathBufferSize)
+{
+    Handle file = OpenFile(SKINS_ID_PATH, "r");
+    if (file == INVALID_HANDLE)
+    {
+        PrintToServer("[PTE-INC] [PreCacheModels] ERROR: Cannot open the file. did you forget to create it?");
+        return false;
+    }
+
+    char line[PLATFORM_MAX_PATH + 65];
+    char buffers[2][PLATFORM_MAX_PATH];
+
+    while (ReadFileLine(file, line, sizeof(line)))
+    {
+        TrimString(line);
+        int numParts = ExplodeString(line, ":", buffers, 2, PLATFORM_MAX_PATH);
+
+        if (numParts != 2)
+        {
+            PrintToServer("[PTE-INC] [GetSkinModelPathBySkinID] ERROR: Invalid format: %s, you should follow the standard: 'id:path'", line);
+            continue;
+        }
+
+        char id[64];
+        char path[PLATFORM_MAX_PATH];
+
+        strcopy(id, sizeof(id), buffers[0]);
+        strcopy(path, sizeof(path), buffers[1]);
+
+        // PrintToServer("[PTE-INC] ITERATION: %s == %s", providedSkinID, id);
+
+        if (StrEqual(id, providedSkinID))
+        {
+            strcopy(skinPathBuffer, skinPathBufferSize, path);
+            return true;
+        }
+    }
+    CloseHandle(file);
+
+    return false;
+}
+
+// Returns the skin name by the skinid
+stock bool GetSkinNameBySkinID(const char[] providedSkinID, char[] skinNameBuffer, int skinNameBufferSize)
+{
+    Handle file = OpenFile(SKINS_NAME_PATH, "r");
+    if (file == INVALID_HANDLE)
+    {
+        PrintToServer("[PTE-INC] [PreCacheModels] ERROR: Cannot open the file. did you forget to create it?");
+        return false;
+    }
+
+    char line[PLATFORM_MAX_PATH + 65];
+    char buffers[2][PLATFORM_MAX_PATH];
+
+    while (ReadFileLine(file, line, sizeof(line)))
+    {
+        TrimString(line);
+        int numParts = ExplodeString(line, ":", buffers, 2, PLATFORM_MAX_PATH);
+
+        if (numParts != 2)
+        {
+            PrintToServer("[PTE-INC] [GetSkinModelPathBySkinID] ERROR: Invalid format: %s, you should follow the standard: 'id:path'", line);
+            continue;
+        }
+
+        char id[64];
+        char name[PLATFORM_MAX_PATH];
+
+        strcopy(id, sizeof(id), buffers[0]);
+        strcopy(name, sizeof(name), buffers[1]);
+
+        // PrintToServer("[PTE-INC] ITERATION: %s == %s", providedSkinID, id);
+
+        if (StrEqual(id, providedSkinID))
+        {
+            strcopy(skinNameBuffer, skinNameBufferSize, name);
+            return true;
+        }
+    }
+    CloseHandle(file);
+
+    return false;
+}
+
+// Load available skins to downloads table, should be called OnMapStart
+stock void LoadSkinsToDownloadTable()
+{
+    Handle file = OpenFile(SKINS_DOWNLOAD_LIST, "r");
+    if (file == INVALID_HANDLE)
+    {
+        PrintToServer("[Skin Reader] [PreCacheModels] ERROR: Cannot open the file. did you forget to create it?");
+        return;
+    }
+
+    char line[PLATFORM_MAX_PATH];
+
+    while (ReadFileLine(file, line, sizeof(line)))
+    {
+        TrimString(line);
+
+        // Ignore comments, for some reason is inverted
+        if (!StrContains(line, "//"))
+        {
+            continue;
+        }
+        // Ignore spaces
+        if (strlen(line) == 0)
+        {
+            continue;
+        }
+
+        AddFileToDownloadsTable(line)
+    }
+    CloseHandle(file);
 }
 
 //
