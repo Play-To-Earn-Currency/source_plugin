@@ -448,7 +448,7 @@ stock void ShowMenu(int client)
 
     if (steamid == 0)
     {
-        PrintToServer("[PTE-INC] Invalid client when registering player");
+        PrintToServer("[PTE-INC] Invalid client when showing the menu");
         return;
     }
 
@@ -458,7 +458,7 @@ stock void ShowMenu(int client)
 
     if (requestHandle == INVALID_HANDLE)
     {
-        PrintToServer("[PTE] Error while creating the http request.");
+        PrintToServer("[PTE-INC] Error while creating the http request.");
         return;
     }
 
@@ -478,21 +478,21 @@ stock OnMenuBalanceReceived(Handle hRequest, bool bFailure, bool bRequestSuccess
 
     if (eStatusCode != k_EHTTPStatusCode200OK)
     {
-        PrintToServer("[PTE] Cannot receive balance from user, please check the http server");
+        PrintToServer("[PTE-INC] Cannot receive balance from user, please check the http server");
         return;
     }
 
     int bodySize = 0;
     if (!SteamWorks_GetHTTPResponseBodySize(hRequest, bodySize) || bodySize <= 0)
     {
-        PrintToServer("[PTE] Body response is empty");
+        PrintToServer("[PTE-INC] Body response is empty");
         return;
     }
 
     char[] balance = new char[bodySize + 1];
     if (!SteamWorks_GetHTTPResponseBodyData(hRequest, balance, bodySize))
     {
-        PrintToServer("[PTE] Failed to receive balance body response");
+        PrintToServer("[PTE-INC] Failed to receive balance body response");
         return;
     }
 
@@ -619,7 +619,7 @@ stock void Simple_ShowSkinsMenu(int client)
 
     if (steamid == 0)
     {
-        PrintToServer("[PTE-INC] Invalid client when registering player");
+        PrintToServer("[PTE-INC] Invalid client when showing skins menu");
         return;
     }
 
@@ -629,7 +629,7 @@ stock void Simple_ShowSkinsMenu(int client)
 
     if (requestHandle == INVALID_HANDLE)
     {
-        PrintToServer("[PTE] Error while creating the http request.");
+        PrintToServer("[PTE-INC] Error while creating the http request.");
         return;
     }
 
@@ -655,21 +655,21 @@ stock Simple_OnSkinMenuSkinsReceived(Handle hRequest, bool bFailure, bool bReque
 
     if (eStatusCode != k_EHTTPStatusCode200OK)
     {
-        PrintToServer("[PTE] Cannot receive skins from user, please check the http server");
+        PrintToServer("[PTE-INC] Cannot receive skins from user, please check the http server");
         return;
     }
 
     int bodySize = 0;
     if (!SteamWorks_GetHTTPResponseBodySize(hRequest, bodySize) || bodySize <= 0)
     {
-        PrintToServer("[PTE] Body response is empty");
+        PrintToServer("[PTE-INC] Body response is empty");
         return;
     }
 
     char[] skins = new char[bodySize + 1];
     if (!SteamWorks_GetHTTPResponseBodyData(hRequest, skins, bodySize))
     {
-        PrintToServer("[PTE] Failed to receive skins body response");
+        PrintToServer("[PTE-INC] Failed to receive skins body response");
         return;
     }
 
@@ -949,6 +949,37 @@ stock void LoadSkinsToDownloadTable()
     CloseHandle(file);
 }
 
+// Remove 0 in string float numbers, example:
+// "0.1000000" -> "0.1"
+stock void TrimTrailingZeros(char[] str)
+{
+    int len = strlen(str);
+
+    int dot = -1;
+    for (int i = 0; i < len; i++)
+    {
+        if (str[i] == '.')
+        {
+            dot = i;
+            break;
+        }
+    }
+
+    if (dot == -1)
+        return;
+
+    int end = len - 1;
+    while (end > dot && str[end] == '0')
+    {
+        str[end] = '\0';
+        end--;
+    }
+
+    if (str[end] == '.')
+    {
+        str[end] = '\0';
+    }
+}
 //
 // #ENDREGION Utils
 //
