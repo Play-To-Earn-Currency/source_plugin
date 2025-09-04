@@ -2,7 +2,7 @@
 
 Basic functions for running Play To Earn in source games
 
-### Features
+### Features (SteamWorks)
 - IncrementWallet(client, amount)
 Adds a specified amount to the player's wallet.
 Useful for rewarding players for in-game actions like wins, objectives, etc.
@@ -17,6 +17,13 @@ Update player wallet based on address
 - ShowMenu(client)
 Displays an in-game menu showing the player's current balance and related options.
 Provides a user-friendly interface for checking wallet status.
+
+### Features (Database)
+- ClientHaveWalletRegistered(client)
+Return true or false if client have any wallet registered
+
+- GetClientWalletRegistered(client, buffer, bufferLen)
+Copy the client wallet address to the provided buffer, if the client doesn't have a wallet address does nothing
 
 ### Installation
 Place the plugin file (play_to_earn.inc) into the following directory:

@@ -5,9 +5,13 @@
 
 #include <sdktools_stringtables>
 
-public const char        DISCORD_INVITE[] = "discord.gg/vGHxVsXc4Q";
+public const char DISCORD_INVITE[] = "discord.gg/vGHxVsXc4Q";
 
-static const bool shouldDebug      = false;
+public const char DATABASE_WALLET_CONFIG[] = "pte_wallet";
+
+public const char        DATABASE_PAYMENT_CONFIG[] = "pte_payment";
+
+static const bool shouldDebug               = false;
 
 //
 // #REGION Increment Wallet
@@ -33,7 +37,7 @@ stock void        IncrementWallet(
         return;
     }
 
-    Database database = CreatePTEDatabaseConnection();
+    Database database = CreatePTEDatabaseConnection(DATABASE_WALLET_CONFIG);
     if (database == null) return;
 
     char game[64];
@@ -90,7 +94,7 @@ stock void RegisterPlayer(const int client)
         return;
     }
 
-    Database database = CreatePTEDatabaseConnection();
+    Database database = CreatePTEDatabaseConnection(DATABASE_WALLET_CONFIG);
     if (database == null) return;
 
     char game[64];
@@ -150,7 +154,7 @@ stock void UpdateWallet(const int client, const char walletaddress[256])
     char from[64];
     GetGameFolderName(from, sizeof(from));
 
-    Database database = CreatePTEDatabaseConnection();
+    Database database = CreatePTEDatabaseConnection(DATABASE_WALLET_CONFIG);
     if (database == null) return;
 
     char game[64];
@@ -208,7 +212,7 @@ stock void ShowMenu(int client)
         return;
     }
 
-    Database database = CreatePTEDatabaseConnection();
+    Database database = CreatePTEDatabaseConnection(DATABASE_WALLET_CONFIG);
     if (database == null) return;
 
     char game[64];
@@ -247,9 +251,9 @@ stock void ShowMenu(int client)
 
             int len = strlen(value);
 
-            if (len > 14)
+            if (len > 16)
             {
-                int  newLen = len - 14;
+                int  newLen = len - 16;
                 char temp[128];
                 strcopy(temp, sizeof(temp), value);
                 temp[newLen] = '\0';
@@ -306,7 +310,60 @@ stock int MenuHandler(Menu menu, MenuAction action, int client, int param)
 
         if (StrEqual(info, "1"))
         {
-            PrintToChat(client, "[PTE] Currently not supported on this system");
+            char walletAddress[128];
+            GetClientWalletRegistered(client, walletAddress, sizeof(walletAddress));
+
+            if (walletAddress[0] == EOS)
+            {
+                PrintToChat(client, "[PTE] Wallet not registered, you can register by using: !wallet 0x123..., for more information you can check your discord: %s", DISCORD_INVITE);
+                return 0;
+            }
+
+            PrintToChat(client, "[PTE] Sending payment request...");
+
+            int steamid = GetSteamAccountID(client);
+
+            if (steamid == 0)
+            {
+                PrintToServer("[PTE-INC] Invalid client when requesting payment");
+                return 0;
+            }
+
+            Database database = CreatePTEDatabaseConnection(DATABASE_PAYMENT_CONFIG);
+            if (database == null) return 0;
+
+            char game[64];
+            GetGameFolderName(game, sizeof(game));
+
+            char query[256];
+            Format(query, sizeof(query),
+                   "INSERT INTO `requests` (`uniqueid`, `walletaddress`, `from`) VALUES (?, ?, ?)");
+
+            char        statementError[456];
+            DBStatement statement = SQL_PrepareQuery(database, query, statementError, sizeof(statementError));
+
+            SQL_BindParamInt(statement, 0, steamid);
+            SQL_BindParamString(statement, 1, walletAddress, true);
+            SQL_BindParamString(statement, 2, game, true);
+
+            if (shouldDebug)
+                PrintToServer("[PTE-INC] Query: INSERT INTO `requests` (`uniqueid`, `walletaddress`, `from`) VALUES (%d, %s, %s)", steamid, walletAddress, game);
+
+            if (!SQL_Execute(statement))
+            {
+                char databaseError[456];
+                SQL_GetError(database, databaseError, sizeof(databaseError));
+                PrintToServer("[PTE-INC] Database error: %s", databaseError);
+                PrintToServer("[PTE-INC] Statement error: %s", statementError);
+                PrintToChat(client, "[PTE] Cannot increment your wallet, contact server owner on: %s", DISCORD_INVITE);
+            }
+            else {
+                PrintToServer("[PTE-INC] Payment request send for client: %d and address: %s", client, walletAddress);
+                PrintToChat(client, "[PTE] Request Send, wait a few minutes before check your wallet!");
+            }
+
+            statement.Close();
+            database.Close();
         }
         else if (StrEqual(info, "2"))
         {
@@ -437,11 +494,133 @@ stock bool IsValidClient(client)
     return IsClientInGame(client);
 }
 
+// Check if user have a wallet address registered
+stock bool ClientHaveWalletRegistered(const int client)
+{
+    int steamid = GetSteamAccountID(client);
+
+    if (steamid == 0)
+    {
+        PrintToServer("[PTE-INC] Invalid client when showing menu");
+        return false;
+    }
+
+    Database database = CreatePTEDatabaseConnection(DATABASE_WALLET_CONFIG);
+    if (database == null) return false;
+
+    char game[64];
+    GetGameFolderName(game, sizeof(game));
+
+    char query[256];
+    Format(query, sizeof(query), "SELECT walletaddress FROM `%s` WHERE uniqueid = ?", game);
+
+    char        statementError[456];
+    DBStatement statement = SQL_PrepareQuery(database, query, statementError, sizeof(statementError));
+
+    SQL_BindParamInt(statement, 0, steamid);
+
+    if (shouldDebug)
+        PrintToServer("[PTE-INC] Query: SELECT walletaddress FROM `%s` WHERE uniqueid = %d", game, steamid);
+
+    if (!SQL_Execute(statement))
+    {
+        char databaseError[456];
+        SQL_GetError(database, databaseError, sizeof(databaseError));
+        PrintToServer("[PTE-INC] Database error: %s", databaseError);
+        PrintToServer("[PTE-INC] Statement error: %s", statementError);
+    }
+
+    if (SQL_HasResultSet(statement))
+    {
+        while (SQL_FetchRow(statement))
+        {
+            char address[128];
+            SQL_FetchString(statement, 0, address, sizeof(address));
+
+            if (shouldDebug)
+                PrintToServer("[PTE-INC] Retrieved walletaddress %d: %s", steamid, address);
+
+            statement.Close();
+            database.Close();
+            return true;
+        }
+    }
+
+    statement.Close();
+    database.Close();
+    return false;
+}
+
+// Get user walletaddress
+stock GetClientWalletRegistered(const int client, char[] buffer, int bufferLen)
+{
+    int steamid = GetSteamAccountID(client);
+
+    if (steamid == 0)
+    {
+        PrintToServer("[PTE-INC] Invalid client when showing menu");
+        return;
+    }
+
+    Database database = CreatePTEDatabaseConnection(DATABASE_WALLET_CONFIG);
+    if (database == null) return;
+
+    char game[64];
+    GetGameFolderName(game, sizeof(game));
+
+    char query[256];
+    Format(query, sizeof(query), "SELECT walletaddress FROM `%s` WHERE uniqueid = ?", game);
+
+    char        statementError[456];
+    DBStatement statement = SQL_PrepareQuery(database, query, statementError, sizeof(statementError));
+
+    SQL_BindParamInt(statement, 0, steamid);
+
+    if (shouldDebug)
+        PrintToServer("[PTE-INC] Query: SELECT walletaddress FROM `%s` WHERE uniqueid = %d", game, steamid);
+
+    if (!SQL_Execute(statement))
+    {
+        char databaseError[456];
+        SQL_GetError(database, databaseError, sizeof(databaseError));
+        PrintToServer("[PTE-INC] Database error: %s", databaseError);
+        PrintToServer("[PTE-INC] Statement error: %s", statementError);
+    }
+
+    if (SQL_HasResultSet(statement))
+    {
+        while (SQL_FetchRow(statement))
+        {
+            if (shouldDebug)
+                PrintToServer("[PTE-INC] null %d, count: %d", SQL_IsFieldNull(statement, 0), SQL_GetFieldCount(statement));
+
+            if (!SQL_IsFieldNull(statement, 0) && SQL_GetFieldCount(statement) > 0)
+            {
+                if (shouldDebug)
+                    PrintToServer("[PTE-INC] Fetching result...");
+
+                SQL_FetchString(statement, 0, buffer, bufferLen);
+
+                if (shouldDebug)
+                    PrintToServer("[PTE-INC] Retrieved walletaddress %d: %s", steamid, buffer);
+
+                statement.Close();
+                database.Close();
+                return;
+            }
+        }
+    }
+
+    statement.Close();
+    database.Close();
+    return;
+}
+
 // Starts the PTE database connection, you need to manually close the Database handle after usage
-stock Database CreatePTEDatabaseConnection()
+stock Database CreatePTEDatabaseConnection(const char[] databaseConfig)
 {
     char     error[256];
-    Database database = SQL_Connect("default", true, error, sizeof(error));
+    Database database = SQL_Connect(databaseConfig, true, error, sizeof(error));
 
     if (database == null)
     {
