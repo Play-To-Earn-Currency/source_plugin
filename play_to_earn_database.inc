@@ -251,36 +251,45 @@ stock void ShowMenu(int client)
 
             int len = strlen(value);
 
-            if (len > 16)
+            if (len >= 19)
             {
-                int  newLen = len - 16;
-                char temp[128];
-                strcopy(temp, sizeof(temp), value);
-                temp[newLen] = '\0';
-                strcopy(value, sizeof(value), temp);
+                int newLen    = len - 16;
+                value[newLen] = '\0';
+
+                int finalLen  = strlen(value);
+                if (finalLen >= 2)
+                {
+                    for (int i = finalLen; i >= finalLen - 1; i--)
+                        value[i + 1] = value[i];
+
+                    value[finalLen - 2] = '.';
+                }
             }
-
-            len = strlen(value);
-
-            if (len == 1 || len == 2)
+            else if (len == 18)
             {
-                char temp[128];
-                Format(temp, sizeof(temp), "0.%s", value);
-                strcopy(value, sizeof(value), temp);
+                char newValue[64];
+
+                char firstTwo[3];
+                strcopy(firstTwo, sizeof(firstTwo), value);
+                firstTwo[2] = '\0';
+
+                Format(newValue, sizeof(newValue), "0.%s", firstTwo);
+
+                strcopy(value, sizeof(value), newValue);
+            }
+            else if (len == 17) {
+                char newValue[64];
+
+                char firstOne[2];
+                strcopy(firstOne, sizeof(firstOne), value);
+                firstOne[1] = '\0';
+
+                Format(newValue, sizeof(newValue), "0.0%s", firstOne);
+
+                strcopy(value, sizeof(value), newValue);
             }
             else {
-                int  pos = len - 2;
-
-                char temp[128];
-                strcopy(temp, sizeof(temp), value);
-                temp[pos] = '\0';
-
-                char lastTwo[3];
-                lastTwo[0] = value[pos];
-                lastTwo[1] = value[pos + 1];
-                lastTwo[2] = '\0';
-
-                Format(value, sizeof(value), "%s.%s", temp, lastTwo);
+                value = "0";
             }
 
             if (shouldDebug)
