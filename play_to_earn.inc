@@ -14,9 +14,6 @@ static const char SKINS_ID_PATH[]       = "addons/sourcemod/configs/skins_reader
 static const char SKINS_NAME_PATH[]     = "addons/sourcemod/configs/skins_reader/skins_name.init";
 static const char SKINS_DOWNLOAD_LIST[] = "addons/sourcemod/configs/skins_reader/downloads_list.ini";
 
-// Configurations
-public bool       enableSkinMenu = false;
-
 //
 // #REGION Increment Wallet
 //
@@ -501,10 +498,6 @@ stock OnMenuBalanceReceived(Handle hRequest, bool bFailure, bool bRequestSuccess
     menu.AddItem("1", "Request Payment");
     menu.AddItem("2", "Register Wallet");
     menu.AddItem("3", "View Steam ID");
-    if (enableSkinMenu)
-    {
-        menu.AddItem("4", "View Available Skins");
-    }
     menu.Display(client, 8);
 }
 
@@ -561,11 +554,6 @@ stock int MenuHandler(Menu menu, MenuAction action, int client, int param)
             PrintToChat(client, "[PTE] Your steam id is: %d", GetSteamAccountID(client));
             ShowMenu(client);
         }
-        else if (StrEqual(info, "4") && enableSkinMenu)
-        {
-            PrintToChat(client, "[PTE] Wait a second while the server is loading your available skins...");
-            Simple_ShowSkinsMenu(client);
-        }
     }
 
     return 0;
@@ -601,124 +589,6 @@ stock OnPaymentRequestReceived(Handle hRequest, bool bFailure, bool bRequestSucc
 
 //
 // #ENDREGION Show Menu
-//
-
-//
-// #REGION Show SIMPLE Skins Menu
-//
-
-// Show the skin menu to the player
-stock void Simple_ShowSkinsMenu(int client)
-{
-    if (!IsValidClient(client))
-    {
-        return;
-    }
-
-    int steamid = GetSteamAccountID(client);
-
-    if (steamid == 0)
-    {
-        PrintToServer("[PTE-INC] Invalid client when showing skins menu");
-        return;
-    }
-
-    char url[256];
-    Format(url, sizeof(url), "%s/availableskins?uniqueid=%d", SKIN_HTTP_IP, steamid);
-    Handle requestHandle = SteamWorks_CreateHTTPRequest(k_EHTTPMethodGET, url);
-
-    if (requestHandle == INVALID_HANDLE)
-    {
-        PrintToServer("[PTE-INC] Error while creating the http request.");
-        return;
-    }
-
-    SteamWorks_SetHTTPRequestContextValue(requestHandle, client);
-    SteamWorks_SetHTTPCallbacks(requestHandle, Simple_OnSkinMenuSkinsReceived);
-
-    char from[64];
-    GetGameFolderName(from, sizeof(from));
-
-    SteamWorks_SetHTTPRequestHeaderValue(requestHandle, "from", from);
-    SteamWorks_SendHTTPRequest(requestHandle);
-}
-
-stock Simple_OnSkinMenuSkinsReceived(Handle hRequest, bool bFailure, bool bRequestSuccessful, EHTTPStatusCode eStatusCode, any data1, any data2)
-{
-    int client = data1;
-
-    if (eStatusCode == k_EHTTPStatusCode501NotImplemented)
-    {
-        PrintToChat(client, "[PTE] Cannot view your skins because you don't have any wallet, you can register your wallet address in the chat, like: !wallet 0x123..., for more information you can check your discord: %s", DISCORD_INVITE);
-        return;
-    }
-
-    if (eStatusCode != k_EHTTPStatusCode200OK)
-    {
-        PrintToServer("[PTE-INC] Cannot receive skins from user, please check the http server");
-        return;
-    }
-
-    int bodySize = 0;
-    if (!SteamWorks_GetHTTPResponseBodySize(hRequest, bodySize) || bodySize <= 0)
-    {
-        PrintToServer("[PTE-INC] Body response is empty");
-        return;
-    }
-
-    char[] skins = new char[bodySize + 1];
-    if (!SteamWorks_GetHTTPResponseBodyData(hRequest, skins, bodySize))
-    {
-        PrintToServer("[PTE-INC] Failed to receive skins body response");
-        return;
-    }
-
-    if (skins[0] == '[')
-    {
-        strcopy(skins, bodySize + 1, skins[1]);
-    }
-
-    int len = strlen(skins);
-    if (len > 0 && skins[len - 1] == ']')
-    {
-        skins[len - 1] = '\0';
-    }
-
-    char parts[16][16];
-    int  count = ExplodeString(skins, ",", parts, sizeof(parts), sizeof(parts[]));
-
-    Menu menu  = new Menu(Simple_SkinMenuHandler);
-    menu.SetTitle("Select your desired skin");
-    for (int i = 0; i < count; i++)
-    {
-        char skinName[PLATFORM_MAX_PATH];
-        if (GetSkinNameBySkinID(parts[i], skinName, sizeof(skinName)))
-        {
-            menu.AddItem(parts[i], skinName);
-        }
-        else {
-            PrintToServer("[PTE-INC] ERROR: No name can be found for skinid: %s, verify in %s", parts[i], SKINS_NAME_PATH);
-            menu.AddItem(parts[i], "No Name");
-        }
-    }
-    menu.Display(client, 8);
-}
-
-stock int Simple_SkinMenuHandler(Menu menu, MenuAction action, int client, int param)
-{
-    if (action == MenuAction_Select)
-    {
-        char info[32];
-        menu.GetItem(param, info, sizeof(info));
-
-        Simple_EquipSkin(client, info);
-    }
-
-    return 0;
-}
-
-//
-// #ENDREGION Show Skins Menu
 //
 
 //
