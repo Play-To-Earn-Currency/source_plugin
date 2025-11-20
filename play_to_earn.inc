@@ -10,21 +10,25 @@ public const char        DISCORD_INVITE[]      = "discord.gg/vGHxVsXc4Q";
 static const char DATABASE_HTTP_IP[]    = "http://localhost:8000";
 static const char PAYMENT_HTTP_IP[]     = "http://localhost:8001";
 static const char SKIN_HTTP_IP[]        = "http://localhost:8002";
-static const char SKINS_ID_PATH[]       = "addons/sourcemod/configs/skins_reader/skins_id.init";
-static const char SKINS_NAME_PATH[]     = "addons/sourcemod/configs/skins_reader/skins_name.init";
+static const char SKINS_ID_PATH[]       = "addons/sourcemod/configs/skins_reader/skins_id.ini";
+static const char SKINS_NAME_PATH[]     = "addons/sourcemod/configs/skins_reader/skins_name.ini";
 static const char SKINS_DOWNLOAD_LIST[] = "addons/sourcemod/configs/skins_reader/downloads_list.ini";
+static const char SKINS_CONFIG[]        = "addons/sourcemod/configs/play_to_earn_skins_config.ini";
+
+// Configurations
+bool              enableSimpleSkinMenu  = false;
 
 //
 // #REGION Increment Wallet
 //
 
-char       incrementWalletRequestBodies[MAXPLAYERS][256];
+char              incrementWalletRequestBodies[MAXPLAYERS][256];
 // Increment value to the player wallet
-stock void IncrementWallet(
-    int client,
-    char[] valueToIncrement,
-    char[] valueToShow = "0 PTE",
-    char[] reason      = ", for Playing")
+stock void        IncrementWallet(
+           int client,
+           char[] valueToIncrement,
+           char[] valueToShow = "0 PTE",
+           char[] reason      = ", for Playing")
 {
     if (!IsValidClient(client))
     {
@@ -252,8 +256,102 @@ stock void OnCommandRegisterWalletRequest(Handle hRequest, bool bFailure, bool b
 //
 
 //
-// #REGION Equip Skin
+// #REGION Simple Skin
 //
+
+// Initializes and load configurations from simple skin system
+stock void Simple_InitSkins()
+{
+    if (!FileExists(SKINS_ID_PATH))
+    {
+        Handle file = OpenFile(SKINS_ID_PATH, "w");
+        if (file != null)
+        {
+            WriteFileLine(file, "0-0:models/player/model1.mdl");
+            WriteFileLine(file, "0-1:models/player/model2.mdl");
+            WriteFileLine(file, "0-2:models/player/model3.mdl");
+            WriteFileLine(file, "0-3:models/player/model4.mdl");
+            CloseHandle(file);
+            PrintToServer("[PTE] Configuration file created: %s, consider changing it", SKINS_ID_PATH);
+        }
+        else
+        {
+            PrintToServer("[PTE] Cannot create default file skins_id.");
+            return;
+        }
+    }
+
+    if (!FileExists(SKINS_NAME_PATH))
+    {
+        Handle file = OpenFile(SKINS_NAME_PATH, "w");
+        if (file != null)
+        {
+            WriteFileLine(file, "0-0:Model 1");
+            WriteFileLine(file, "0-1:Model 2");
+            WriteFileLine(file, "0-2:Model 3");
+            WriteFileLine(file, "0-3:Model 4");
+            CloseHandle(file);
+            PrintToServer("[PTE] Configuration file created: %s, consider changing it", SKINS_NAME_PATH);
+        }
+        else
+        {
+            PrintToServer("[PTE] Cannot create default file skins_name.");
+            return;
+        }
+    }
+
+    if (!FileExists(SKINS_DOWNLOAD_LIST))
+    {
+        Handle file = OpenFile(SKINS_DOWNLOAD_LIST, "w");
+        if (file != null)
+        {
+            WriteFileLine(file, "models/player/model1.mdl");
+            WriteFileLine(file, "models/player/model2.mdl");
+            WriteFileLine(file, "models/player/model3.mdl");
+            WriteFileLine(file, "models/player/model4.mdl");
+            CloseHandle(file);
+            PrintToServer("[PTE] Configuration file created: %s, consider changing it", SKINS_DOWNLOAD_LIST);
+        }
+        else
+        {
+            PrintToServer("[PTE] Cannot create default file download_list.");
+            return;
+        }
+    }
+
+    if (!FileExists(SKINS_CONFIG))
+    {
+        Handle file = OpenFile(SKINS_CONFIG, "w");
+        if (file != null)
+        {
+            WriteFileLine(file, "\"PlayToEarnSkins\"");
+            WriteFileLine(file, "{");
+
+            WriteFileLine(file, "    \"enableSimpleSkinMenu\"       0");
+
+            WriteFileLine(file, "}");
+            CloseHandle(file);
+            PrintToServer("[PTE] Configuration file created: %s", SKINS_CONFIG);
+        }
+        else
+        {
+            PrintToServer("[PTE] Cannot create default file config.");
+            return;
+        }
+    }
+
+    KeyValues kv = new KeyValues("PlayToEarnSkins");
+    if (!kv.ImportFromFile(SKINS_CONFIG))
+    {
+        delete kv;
+        PrintToServer("[PTE] Cannot load configuration file: %s", SKINS_CONFIG);
+    }
+    else {
+        enableSimpleSkinMenu = view_as<bool>(kv.GetNum("enableSimpleSkinMenu", 0));
+    }
+
+    LoadSkinsToDownloadTable();
+}
 
 // Equip the skin to the player
 stock void Simple_EquipSkin(const int client, const char[] skinid)
@@ -314,14 +412,6 @@ stock void Simple_OnEquipSkinRequest(Handle hRequest, bool bFailure, bool bReque
         PrintToChat(client, "[PTE] Server error, contact server owner on: %s, code: %d", DISCORD_INVITE, eStatusCode);
     }
 }
-
-//
-// #ENDREGION Equip Skin
-//
-
-//
-// #REGION SIMPLE Equipped Skin
-//
 
 Function   equippedSkinRequestCallbacks[MAXPLAYERS];
 stock void Simple_EquippedSkin(int client, Function callback)
@@ -427,7 +517,7 @@ stock void Simple_OnEquippedSkinRequest(Handle hRequest, bool bFailure, bool bRe
 }
 
 //
-// #ENDREGION SIMPLE Equipped Skin
+// #ENDREGION Simple Skin
 //
 
 //
@@ -498,6 +588,10 @@ stock OnMenuBalanceReceived(Handle hRequest, bool bFailure, bool bRequestSuccess
     menu.AddItem("1", "Request Payment");
     menu.AddItem("2", "Register Wallet");
     menu.AddItem("3", "View Steam ID");
+    if (enableSimpleSkinMenu)
+    {
+        menu.AddItem("4", "View Available Skins");
+    }
     menu.Display(client, 8);
 }
 
@@ -554,6 +648,11 @@ stock int MenuHandler(Menu menu, MenuAction action, int client, int param)
             PrintToChat(client, "[PTE] Your steam id is: %d", GetSteamAccountID(client));
             ShowMenu(client);
         }
+        else if (StrEqual(info, "4") && enableSimpleSkinMenu)
+        {
+            PrintToChat(client, "[PTE] Wait a second while the server is loading your available skins...");
+            Simple_ShowSkinsMenu(client);
+        }
     }
 
     return 0;
@@ -580,7 +679,7 @@ stock OnPaymentRequestReceived(Handle hRequest, bool bFailure, bool bRequestSucc
         PrintToChat(client, "[PTE] Wallet not registered, you can register by using: !wallet 0x123..., for more information you can check your discord: %s", DISCORD_INVITE);
     }
     else if (eStatusCode == k_EHTTPStatusCode406NotAcceptable) {
-        PrintToChat(client, "[PTE] You don't have sufficient PTE to request a payment, please play more to earn PTE. >.<");
+        PrintToChat(client, "[PTE] You don't have sufficient PTE to request a payment.");
     }
     else {
         PrintToChat(client, "[PTE] Server error, contact server owner on: %s, code: %d", DISCORD_INVITE, eStatusCode);
@@ -589,6 +688,124 @@ stock OnPaymentRequestReceived(Handle hRequest, bool bFailure, bool bRequestSucc
 
 //
 // #ENDREGION Show Menu
+//
+
+//
+// #REGION Show Simple Skins Menu
+//
+
+// Show the skin menu to the player
+stock void Simple_ShowSkinsMenu(int client)
+{
+    if (!IsValidClient(client))
+    {
+        return;
+    }
+
+    int steamid = GetSteamAccountID(client);
+
+    if (steamid == 0)
+    {
+        PrintToServer("[PTE-INC] Invalid client when showing skins menu");
+        return;
+    }
+
+    char url[256];
+    Format(url, sizeof(url), "%s/availableskins?uniqueid=%d", SKIN_HTTP_IP, steamid);
+    Handle requestHandle = SteamWorks_CreateHTTPRequest(k_EHTTPMethodGET, url);
+
+    if (requestHandle == INVALID_HANDLE)
+    {
+        PrintToServer("[PTE-INC] Error while creating the http request.");
+        return;
+    }
+
+    SteamWorks_SetHTTPRequestContextValue(requestHandle, client);
+    SteamWorks_SetHTTPCallbacks(requestHandle, Simple_OnSkinMenuSkinsReceived);
+
+    char from[64];
+    GetGameFolderName(from, sizeof(from));
+
+    SteamWorks_SetHTTPRequestHeaderValue(requestHandle, "from", from);
+    SteamWorks_SendHTTPRequest(requestHandle);
+}
+
+stock Simple_OnSkinMenuSkinsReceived(Handle hRequest, bool bFailure, bool bRequestSuccessful, EHTTPStatusCode eStatusCode, any data1, any data2)
+{
+    int client = data1;
+
+    if (eStatusCode == k_EHTTPStatusCode501NotImplemented)
+    {
+        PrintToChat(client, "[PTE] Cannot view your skins because you don't have any wallet, you can register your wallet address in the chat, like: !wallet 0x123..., for more information you can check your discord: %s", DISCORD_INVITE);
+        return;
+    }
+
+    if (eStatusCode != k_EHTTPStatusCode200OK)
+    {
+        PrintToServer("[PTE-INC] Cannot receive skins from user, please check the http server");
+        return;
+    }
+
+    int bodySize = 0;
+    if (!SteamWorks_GetHTTPResponseBodySize(hRequest, bodySize) || bodySize <= 0)
+    {
+        PrintToServer("[PTE-INC] Body response is empty");
+        return;
+    }
+
+    char[] skins = new char[bodySize + 1];
+    if (!SteamWorks_GetHTTPResponseBodyData(hRequest, skins, bodySize))
+    {
+        PrintToServer("[PTE-INC] Failed to receive skins body response");
+        return;
+    }
+
+    if (skins[0] == '[')
+    {
+        strcopy(skins, bodySize + 1, skins[1]);
+    }
+
+    int len = strlen(skins);
+    if (len > 0 && skins[len - 1] == ']')
+    {
+        skins[len - 1] = '\0';
+    }
+
+    char parts[16][16];
+    int  count = ExplodeString(skins, ",", parts, sizeof(parts), sizeof(parts[]));
+
+    Menu menu  = new Menu(Simple_SkinMenuHandler);
+    menu.SetTitle("Select your desired skin");
+    for (int i = 0; i < count; i++)
+    {
+        char skinName[PLATFORM_MAX_PATH];
+        if (GetSkinNameBySkinID(parts[i], skinName, sizeof(skinName)))
+        {
+            menu.AddItem(parts[i], skinName);
+        }
+        else {
+            PrintToServer("[PTE-INC] ERROR: No name can be found for skinid: %s, verify in %s", parts[i], SKINS_NAME_PATH);
+            menu.AddItem(parts[i], "No Name");
+        }
+    }
+    menu.Display(client, 8);
+}
+
+stock int Simple_SkinMenuHandler(Menu menu, MenuAction action, int client, int param)
+{
+    if (action == MenuAction_Select)
+    {
+        char info[32];
+        menu.GetItem(param, info, sizeof(info));
+
+        Simple_EquipSkin(client, info);
+    }
+
+    return 0;
+}
+
+//
+// #ENDREGION Show Simple Skins Menu
 //
 
 //
