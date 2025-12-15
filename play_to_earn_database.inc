@@ -5,7 +5,7 @@
 
 #include <sdktools_stringtables>
 
-public const char DISCORD_INVITE[] = "discord.gg/vGHxVsXc4Q";
+public const char DISCORD_INVITE[] = "discord.gg/FKeje9AyQA";
 
 public const char DATABASE_WALLET_CONFIG[] = "pte_wallet";
 

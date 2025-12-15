@@ -6,7 +6,7 @@
 #include <sdktools_stringtables>
 #include <SteamWorks>
 
-public const char        DISCORD_INVITE[]      = "discord.gg/vGHxVsXc4Q";
+public const char        DISCORD_INVITE[]      = "discord.gg/FKeje9AyQA";
 static const char DATABASE_HTTP_IP[]    = "http://localhost:8000";
 static const char PAYMENT_HTTP_IP[]     = "http://localhost:8001";
 static const char SKIN_HTTP_IP[]        = "http://localhost:8002";
